@@ -11,8 +11,8 @@ def sigmoid(x):
 
 class MCMC_Autocorr:
     """
-    Fit a 1-D histogram with a compound      Gaussian + Linear model via emcee and
-    provide basic convergence diagnostics (integrated autocorrelation time τ_int).
+    Fit a 1-D histogram with a compound Gaussian + Linear model via emcee and
+    provide basic convergence diagnostics (integrated autocorrelation time tau_int).
     """
 
     @staticmethod
@@ -40,7 +40,7 @@ class MCMC_Autocorr:
         ln_prior  = (alpha-1)*np.log(f_rc) + (beta-1)*np.log(1-f_rc)
         ln_prior += np.log(f_rc) + np.log(1-f_rc)   # jacobian 
 
-        if not np.isfinite(ln_prior):               # guards f_RC=0 or 1
+        if not np.isfinite(ln_prior):               # for f_RC = 0,1
              return -np.inf
         if not (0 < amp < 1_000):
             return -np.inf

@@ -258,35 +258,49 @@ if __name__ == '__main__':
         ["F212N", "F405N", "F212N", "NRCB4", "NRCB5", "NRCB4"], 
     ]
 
-    slopes = {
-        "NRCB1": { 
-            "F115W-F212N_F115W": None,
-            "F212N-F323N_F323N": None,
-            "F212N-F405N_F212N": None, 
-        },
-        "NRCB2": { 
-            "F115W-F212N_F115W": None,
-            "F212N-F323N_F323N": None,
-            "F212N-F405N_F212N": None,
-        },
-        "NRCB3": {
-            "F115W-F212N_F115W": None,
-            "F212N-F323N_F212N": None,
-            "F212N-F405N_F212N": None, 
-        },
-        "NRCB4": {
-            "F115W-F212N_F115W": None,
-            "F212N-F323N_F323N": None,
-            "F212N-F405N_F212N": None,
-        },
-    }
+    slope_name = "./outputs/MCMC/slopes.pkl"
+    try: 
+        with open(slope_name, "rb") as f:
+            slopes = pickle.load(f) 
+    except FileNotFoundError: 
+        logging.warning(f"{slope_name} not found."
+                        f"resetting all values to None and recalculating.")
+        slopes = {
+            "NRCB1": { 
+                "F115W-F212N_F115W": None,
+                "F212N-F323N_F323N": None,
+                "F212N-F405N_F212N": None, 
+            },
+            "NRCB2": { 
+                "F115W-F212N_F115W": None,
+                "F212N-F323N_F323N": None,
+                "F212N-F405N_F212N": None,
+            },
+            "NRCB3": {
+                "F115W-F212N_F115W": None,
+                "F212N-F323N_F212N": None,
+                "F212N-F405N_F212N": None, 
+            },
+            "NRCB4": {
+                "F115W-F212N_F115W": None,
+                "F212N-F323N_F323N": None,
+                "F212N-F405N_F212N": None,
+            },
+        }
 
     for comb in filt_combinations: 
         filt1, filt2, filty, reg1, reg2, regy = comb 
+
+        if filt1 == "F212N": 
+            top_fraction=0.5 
+        else: 
+            top_fraction=1.0
+            
         est = Estimator(
             filt1=filt1, filt2=filt2, filty=filty, 
             reg1=reg1, reg2=reg2, regy=regy, 
             n_bins=10, verbose=True, autocorr=False,
+            top_fraction=top_fraction, max_y_err=0.3
         )
         est.run(save=True) 
         est.plot(save=True, show=False)

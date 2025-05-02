@@ -6,8 +6,6 @@ from scipy.stats import gaussian_kde
 
 class LinearBayes:
     """
-    Parameters
-    ----------
     x, y, yerr : 1-D ndarray
         Full catalogue.  yerr is 1-σ measurement error on y.
     box : (xmin, xmax, ymin, ymax), optional
@@ -61,7 +59,7 @@ class LinearBayes:
 
     def _log_prior(self, theta):
         m, b, log_sig_int = theta
-        # broad uniform for m, b   ;  weak N(0,1) on log σ_int
+        # broad uniform for m, b;  weak N(0,1) on log sig_int
         if -1e3 < m < 1e3 and -1e6 < b < 1e6 and -10 < log_sig_int < 3:
             return -0.5 * log_sig_int**2
         return -np.inf
@@ -77,7 +75,7 @@ class LinearBayes:
         return lp + self._log_likelihood(theta) if np.isfinite(lp) else -np.inf
 
     def _initial_guess(self):
-        """Weighted least-squares seed for (m, b).  σ_int starts at scatter."""
+        """Weighted least-squares seed for (m, b).  sig_int starts at scatter."""
         w = 1.0 / self.yerr**2
         A = np.vstack([self.x, np.ones_like(self.x)]).T * np.sqrt(w[:, None])
         b = self.y * np.sqrt(w)
@@ -88,7 +86,7 @@ class LinearBayes:
     def run(self,
             nwalkers=40, nsteps=6000, burnin=1000, thin=1):
         """
-        Execute the sampler.  Returns (slope, slope_error_1σ)
+        Execute the sampler.  Returns (slope, slope_error_1sig)
         """
         p0 = self._initial_guess()
         ndim = len(p0)
