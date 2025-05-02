@@ -30,6 +30,7 @@ class Cells(Isochrones):
         regy:  str,
         data_dir:     Path = Path("./outputs/red_clump_data/"),
         cutoffs_file: Path = Path("./assets/NRCB1_cutoffs.pkl"),
+        top_fraction = 1.0
     ):
         self.filt1  = filt1
         self.filt2  = filt2
@@ -39,6 +40,7 @@ class Cells(Isochrones):
         self.regy   = regy
         self.data_dir     = Path(data_dir)
         self.cutoffs_file = Path(cutoffs_file)
+        self.top_fraction = top_fraction
 
     # not used 
     def filter_top_density(self, x: np.ndarray, y: np.ndarray, top_fraction: float = 0.1):
@@ -79,12 +81,17 @@ class Cells(Isochrones):
         # mask out non-finite values
         mask = np.isfinite(m1) & np.isfinite(m2)
 
+        x = np.subtract(m1[mask], m2[mask]) 
+        y = np.array(my[mask])
+        
+        x, y = self.filter_top_density(x, y, top_fraction=self.top_fraction)
+
         return {
             "m1": m1[mask],
             "m2": m2[mask],
             "my": my[mask],
-            "x": m1[mask] - m2[mask],
-            "y": my[mask],
+            "x": x,
+            "y": y,
         }
 
     @cached_property
@@ -114,7 +121,7 @@ class Cells(Isochrones):
         Rotation matrix to align RC-bar vertically.
 
         """
-        theta = np.arctan(self.slope)
+        theta = np.arctan(self.slope-1)
         c, s = np.cos(theta), np.sin(theta)
         return np.array([[c, s], [-s, c]])
 
@@ -141,7 +148,7 @@ class Cells(Isochrones):
         rotated = self.rotate()
         x_rot = rotated[:, 0]
         edges = np.linspace(x_rot.min(), x_rot.max(), n_bins + 1)
-        
+
         # assign each star to a bin index 0..n_bins-1
         idxs = np.digitize(x_rot, edges, right=False) - 1
         idxs = np.clip(idxs, 0, n_bins - 1)
@@ -206,21 +213,21 @@ class Cells(Isochrones):
         ax.set_ylabel(self.filty, fontsize=14)
         ax.set_title(f"{self.reg1}: {self.filt1}-{self.filt2} vs. {self.filty}\n" 
                      f"(slope={slope:.3f})", fontsize=16)
-        
+       
         plt.gca().invert_yaxis()
         plt.tight_layout()
         plt.show()
 
 
 if __name__ == "__main__":
-    filt1, reg1 = "F115W", "NRCB1" 
-    filt2, reg2 = "F212N", "NRCB1" 
-    filty, regy = filt1, reg1 
+    filt1, reg1 = "F212N", "NRCB1" 
+    filt2, reg2 = "F323N", "NRCB5" 
+    filty, regy = filt2, reg2
 
     inst = Cells(
         filt1, filt2, filty, 
         reg1, reg2, regy, 
         data_dir=Path("./outputs/red_clump_data/"),
     )
-    inst.plot_bins(15, color=True)
+    inst.plot_bins(10, color=True)
 

@@ -34,9 +34,8 @@ class MCMC_Autocorr:
         u, amp, mu, sig, m, b = theta
         mu0, s0 = np.mean(self.data), np.std(self.data) 
 
-
         # logit-space Beta(alpha, beta) prior
-        alpha, beta = 5.0, 1.0  
+        alpha, beta = 4.0, 2.0  
         f_rc = sigmoid(u)
         ln_prior  = (alpha-1)*np.log(f_rc) + (beta-1)*np.log(1-f_rc)
         ln_prior += np.log(f_rc) + np.log(1-f_rc)   # jacobian 
@@ -85,10 +84,10 @@ class MCMC_Autocorr:
 
         self.sampler = None          # populated by run()
         self.samples = None
-        self.tau = None              # τ_int per parameter
-        self._acorr_curve = None     # (N, τ̄) pairs for plotting 
+        self.tau = None              # \tau_int per parameter
+        self._acorr_curve = None     # (N, mean_\tau) pairs for plotting 
 
-    def run(self, nwalkers=64, nsteps=15_000, burnin=1_000, thin=10):
+    def run(self, nwalkers=64, nsteps=15_000, burnin=1_000, thin=1):
         """
         Launch emcee, store chain and best-fit summary (medians).
         """
@@ -99,15 +98,10 @@ class MCMC_Autocorr:
         self.sampler = emcee.EnsembleSampler(nwalkers, ndim, self._log_prob)
         self.sampler.run_mcmc(pos, nsteps, progress=False)
 
-
         chain = self.sampler.get_chain(discard=burnin, flat=False)  # shape:(T,W,D)
         self.chain = chain                                          # save for later
-        self.samples = self.sampler.get_chain(
-            discard=burnin, thin=thin, flat=True
-        )
-        self.log_probs = self.sampler.get_log_prob(
-            discard=0, flat=False
-        )
+        self.samples = self.sampler.get_chain(discard=burnin, thin=thin, flat=True)
+        self.log_probs = self.sampler.get_log_prob(discard=0, flat=False)
 
         u, amp, mu, sig, m, b = np.median(self.samples, axis=0)
         f = sigmoid(u)
@@ -144,7 +138,7 @@ class MCMC_Autocorr:
 
     def autocorr_vs_N(self, n=20, c=5, tol=50):
         """
-        Track ⟨τ_int⟩ as the chain length N grows (Sokal-style diagnostic).
+        Track ⟨\tau_int⟩ as the chain length N grows (Sokal-style diagnostic).
         Stores a curve for plotting.
         """
         if self.chain is None:
@@ -168,7 +162,8 @@ class MCMC_Autocorr:
 
     def plot_autocorr(self, bin_num, color='k', fig=None, ax=None):
         """
-        Plot ⟨τ_int⟩ against sample size; call autocorr_vs_N() first.
+        Plot ⟨\tau_int⟩ against sample size; 
+        call autocorr_vs_N() first.
         """
         if self._acorr_curve is None:
             raise RuntimeError("Call autocorr_vs_N() before plotting.")

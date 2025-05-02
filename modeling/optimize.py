@@ -1,24 +1,17 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-rc_bar_estimator.py
-Module to estimate the slope of the Red Clump (RC) bar in a color-magnitude diagram (CMD)
-using diagonal bins and MCMC fits for robust uncertainty quantification.
-"""
+
 import logging
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-from modeling.mcmc import MCMC 
+from modeling.mcmc import MCMC
 from modeling.mcmc_autocorr import MCMC_Autocorr
 from modeling.cells import Cells
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
-
 
 class Estimator:
     """
@@ -35,22 +28,25 @@ class Estimator:
         reg2: str,
         regy: str,
         n_bins: int,
+        max_y_err: float = 0.2, 
         out_dir: Path = Path("./outputs/MCMC/"),
         verbose: bool = False,
         autocorr: bool = False, 
-        autocorr_bin: int = 5
+        autocorr_bin: int = 5,
+        top_fraction = 1.0
     ):
         self.filt1 = filt1
         self.filt2 = filt2
         self.filty = filty
         self.region = reg1
         self.n_bins = n_bins
+        self.max_y_err = max_y_err
         self.verbose = verbose
 
         self.out_dir = out_dir.expanduser()
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
-        cells = Cells(filt1, filt2, filty, reg1, reg2, regy)
+        cells = Cells(filt1, filt2, filty, reg1, reg2, regy, top_fraction=top_fraction)
         self.star_bins, initial_slope = cells.cells(n_bins, write=False)
 
         theta = np.arctan(initial_slope)
@@ -61,12 +57,12 @@ class Estimator:
         self.points = []  # representative (x,y) in original frame
         self.errors = []  # corresponding y-errors
         self.fracs  = []  # tile population RC% 
+        self.amps   = []  # amplitudes 
+        self.sigmas = []  # stds
 
         # perform autocorrelation analysis 
         self.autocorr = autocorr
         self.autocorr_bin = autocorr_bin
-        self.max_y_err = 0.2
-
 
     def _analyze_bin(self, stars: np.ndarray, bin_num: int, color: str) -> tuple[np.ndarray, float]:
         """
@@ -81,7 +77,7 @@ class Estimator:
         x_rot, y_rot = rot_stars.T
 
         # MCMC on rotated y
-        if not self.autocorr: 
+        if not self.autocorr:
             mcmc = MCMC(y_rot)
         else: 
             mcmc = MCMC_Autocorr(y_rot)
@@ -89,6 +85,8 @@ class Estimator:
         best_fit, samples, _ = mcmc.run()
 
         mean_y = best_fit['mean']
+        amp    = best_fit['amplitude']
+        sigma  = best_fit['stddev']
         f_rc   = best_fit.get('frac_RC', 1.0)
         sigma_y = np.std(samples[:, 2], ddof=1)
 
@@ -118,9 +116,9 @@ class Estimator:
                     ax=self.ax_autocorr,
                     color=color
                 )
-        return repr_orig, y_err, f_rc
+        return repr_orig, y_err, f_rc, amp, sigma 
 
-    def run(self) -> tuple[float, float]:
+    def run(self, save) -> tuple[float, float]:
         """
         Process all bins, collect points. 
         Compute global slope & intercept.
@@ -134,11 +132,13 @@ class Estimator:
             if stars.size == 0:
                 continue
 
-            point, y_err, f_rc = self._analyze_bin(stars, bin_num=idx, color=colors[idx])
+            point, y_err, f_rc, amp, sig = self._analyze_bin(stars, bin_num=idx, color=colors[idx])
             if (y_err <= self.max_y_err) and (f_rc > 0.01): # tiny RC skipped. 
                 self.points.append(point)
                 self.errors.append(y_err)
                 self.fracs.append(f_rc)
+                self.amps.append(amp)
+                self.sigmas.append(sig)
 
             if self.verbose:
                 if self.autocorr:
@@ -149,8 +149,13 @@ class Estimator:
 
         pts = np.vstack(self.points)
         xs, ys = pts[:, 0], pts[:, 1]
-        weights = np.array(self.fracs) / np.square(self.errors)
-        weights = np.clip(weights, 0, 1e8)
+
+        area = np.sqrt(2*np.pi) * np.array(self.sigmas) * np.array(self.amps)
+        A_norm = area / area.max()
+
+        weights = A_norm * (np.array(self.fracs) / np.square(self.errors))
+        #weights = np.array(self.fracs) * self.amps / np.square(self.errors)
+        #weights = np.clip(weights, 0, 1e8)
 
         # Weighted linear fit
         (self.slope, self.intercept), cov = np.polyfit(xs, ys, 1, w=weights, cov=True)
@@ -158,18 +163,19 @@ class Estimator:
 
         # saving autocorrelation plots
 
-        if self.autocorr: 
-            self.ax_autocorr.set_xlabel(r"Samples $N$", fontsize=14)
-            self.ax_autocorr.set_ylabel(r"Mean $\hat{\tau}_{\mathrm{int}}$", fontsize=14)
-            self.ax_autocorr.legend()
-            self.fig_autocorr.tight_layout()
+        if self.autocorr:
+            if save: 
+                self.ax_autocorr.set_xlabel(r"Samples $N$", fontsize=14)
+                self.ax_autocorr.set_ylabel(r"Mean $\hat{\tau}_{\mathrm{int}}$", fontsize=14)
+                self.ax_autocorr.legend()
+                self.fig_autocorr.tight_layout()
 
-            fname = self.out_dir / f"[AUTOCORR]_{self.region}_{self.n_bins}bins_{self.filt1}-{self.filt2}_{self.filty}.png" 
-            self.fig_autocorr.savefig(
+                fname = self.out_dir / f"[AUTOCORR]_{self.n_bins}bins_{self.region}_{self.filt1}-{self.filt2}_{self.filty}.png" 
+                self.fig_autocorr.savefig(
                 fname, 
                 dpi=300
-            )
-            logging.info(f" png saved to {fname}") 
+                )
+                logging.info(f" png saved to {fname}") 
 
         print(f"\n[FINAL] slope={self.slope:.4f} ± {self.slope_err:.4f}\n")
         return self.slope, self.intercept
@@ -209,7 +215,7 @@ class Estimator:
         ax.set_xlabel(f"{self.filt1} – {self.filt2} (mag)", fontsize=14)
         ax.set_ylabel(f"{self.filty} (mag)", fontsize=14)
         ax.set_title(
-            f"{self.filt1} – {self.filt2} vs {self.filty}\n",
+            f"{self.region} {self.filt1} – {self.filt2} vs {self.filty}\n",
             fontsize=16
         )
         ax.text(
@@ -240,20 +246,19 @@ class Estimator:
 
 if __name__ == '__main__':  
 
-    """
     filt_combinations = [ 
-        ["F115W", "F212N", "F115W", "NRCB1", "NRCB1", "NRCB1"],
-        ["F212N", "F323N", "F323N", "NRCB1", "NRCB5", "NRCB5"], 
-        ["F212N", "F405N", "F212N", "NRCB1", "NRCB5", "NRCB1"], 
-        ["F115W", "F212N", "F115W", "NRCB2", "NRCB2", "NRCB2"],
-        ["F212N", "F323N", "F323N", "NRCB2", "NRCB5", "NRCB5"], 
-        ["F212N", "F405N", "F212N", "NRCB2", "NRCB5", "NRCB2"], 
-        ["F115W", "F212N", "F115W", "NRCB3", "NRCB3", "NRCB3"],
-        ["F212N", "F323N", "F323N", "NRCB3", "NRCB5", "NRCB5"], 
-        ["F212N", "F405N", "F212N", "NRCB3", "NRCB5", "NRCB3"], 
-        ["F115W", "F212N", "F115W", "NRCB4", "NRCB4", "NRCB4"],
-        ["F212N", "F323N", "F323N", "NRCB4", "NRCB5", "NRCB5"], 
-        ["F212N", "F405N", "F212N", "NRCB4", "NRCB5", "NRCB4"], 
+        #["F115W", "F212N", "F115W", "NRCB1", "NRCB1", "NRCB1"],
+        #["F212N", "F323N", "F323N", "NRCB1", "NRCB5", "NRCB5"], 
+        #["F212N", "F405N", "F212N", "NRCB1", "NRCB5", "NRCB1"], 
+        #["F115W", "F212N", "F115W", "NRCB2", "NRCB2", "NRCB2"],
+        #["F212N", "F323N", "F323N", "NRCB2", "NRCB5", "NRCB5"], 
+        #["F212N", "F405N", "F212N", "NRCB2", "NRCB5", "NRCB2"], 
+        #["F115W", "F212N", "F115W", "NRCB3", "NRCB3", "NRCB3"],
+        #["F212N", "F323N", "F323N", "NRCB3", "NRCB5", "NRCB5"], 
+        #["F212N", "F405N", "F212N", "NRCB3", "NRCB5", "NRCB3"], 
+        #["F115W", "F212N", "F115W", "NRCB4", "NRCB4", "NRCB4"],
+        #["F212N", "F323N", "F323N", "NRCB4", "NRCB5", "NRCB5"], 
+        #["F212N", "F405N", "F212N", "NRCB4", "NRCB5", "NRCB4"], 
     ]
 
     for comb in filt_combinations: 
@@ -261,20 +266,18 @@ if __name__ == '__main__':
         est = Estimator(
             filt1=filt1, filt2=filt2, filty=filty, 
             reg1=reg1, reg2=reg2, regy=regy, 
-            n_bins=15, verbose=True, autocorr=False, 
+            n_bins=10, verbose=True, autocorr=True,
         )
-        est.run() 
+        est.run(save=True) 
         est.plot(save=True, show=False)
+
     """
-
-
-
-
     est = Estimator(
         filt1='F115W', filt2='F212N', filty='F115W',
         reg1='NRCB1', reg2='NRCB1', regy='NRCB1',
         n_bins=15, verbose=True, autocorr=True,
     )
-    est.run()
-    est.plot(save=False, show=True)
+    est.run(save=True)
+    est.plot(save=True, show=False)
+    """
 

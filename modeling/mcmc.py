@@ -1,193 +1,139 @@
-import emcee 
-import corner 
-import numpy as np 
+import numpy as np
+import emcee
+import corner
 import matplotlib.pyplot as plt
-from math import log 
 
 
-class MCMC(): 
-    """ 
-    Runs a Markov Chain Monte Carlo (MCMC) to fit a compound Gaussian+Linear1D 
-    model to a distribution of stars. 
+def _sigmoid(x):
+    """ Numerically stable logistic function. """
+    return np.where(
+        x >= 0,
+        1.0 / (1.0 + np.exp(-x)),
+        np.exp(x) / (1.0 + np.exp(x))
+    )
 
-    Implemented on individual bins of an red clump distribution from `Cells`. 
+class MCMC:
+    """
+    emcee sampler for a compound Gaussian+Linear1D histogram model.
 
-    Args: 
-        * data (array-like)   : 1D data samples.
-        * bins (int/sequence) : If int, # bins for np.hist, If sequence, the bin edges.
-
-    run() returns the best fit compound model parameters for the given distribution.
+    theta = = (u, amp, mu, sigma, m, b)
+    f_RC = sigmoid(u) in (0, 1)
 
     """
 
-    def __init__(self, data, bins=50): 
-        self.data = np.asarray(data) 
-        self.bins = bins 
-
-        self.bin_heights, self.bin_edges = np.histogram(self.data, bins=self.bins) 
-        self.bin_centers = 0.5 * (self.bin_edges[:-1] + self.bin_edges[1:]) 
-        self.bin_errors  = np.sqrt(self.bin_heights + 1) 
-
-        self.samples = None 
-        self.best_fit_params = None 
-
     @staticmethod
-    def _compound_model_(theta, x):
-        """
-        f_RC   – fractional weight of the Gaussian component
-        amp    – peak height of the Gaussian 
-        mean   – Gaussian mean 
-        sigma  – Gaussian sigma 
-        slope  – linear-bkg slope
-        intercept – linear-bkg intercept
+    def _compound_model(theta, x):
+        u, amp, mu, sig, m, b = theta
+        f_rc = _sigmoid(u)
 
-        """
+        gauss  = amp * np.exp(-0.5 * ((x - mu) / sig) ** 2)
+        linear = m * x + b
+        return gauss + (1.0 - f_rc) * linear
 
-        f_rc, amp, mean, sigma, slope, intercept = theta
-        gaussian = amp * np.exp(-0.5 * ((x - mean) / sigma) ** 2) 
-        linear   = slope * x + intercept
-        return f_rc * gaussian + (1.0 - f_rc) * linear
+    def _log_prior(self, theta):
+        u, amp, mu, sig, m, b = theta
+        mu0, s0 = np.mean(self.data), np.std(self.data)
 
-    def _log_prior_(self, theta): 
-        f_rc, amplitude, mean, sigma, slope, intercept = theta 
+        # logit-space Beta(alpha, beta) prior on f_RC w/ Jacobian
+        alpha, beta = 3.0, 2.0  
+        f_rc = _sigmoid(u)
+        ln_prior  = (alpha-1)*np.log(f_rc) + (beta-1)*np.log(1-f_rc)
+        ln_prior += np.log(f_rc) + np.log(1-f_rc)   # jacobian 
 
-        # some log priors 
-        # model mean can't be too far from the intrinsic mean 
-        # model stddev can't be too far from the intrinsic stddev 
-        # model amplitude can't be larger than size of data itself 
-        intrinsic_mean = np.mean(self.data) 
-        intrinsic_std  = np.std(self.data) 
-        allowed_means  = [intrinsic_mean-2., intrinsic_mean+2.] 
-        allowed_stds   = [max(0, intrinsic_std-0.5), min(intrinsic_std+0.5, 1e5)]
-
-        # Beta(1,5) prior on f_RC
-        alpha, beta = 5.0, 1.0
-        if not (0.0 < f_rc < 1.0):
+        if not np.isfinite(ln_prior):
             return -np.inf
-        ln_prior = (alpha - 1.0) * log(f_rc) + (beta - 1.0) * log(1.0 - f_rc)
-
-        if  not (0 < amplitude < 1000) or \
-            not (allowed_stds[0] < sigma < allowed_stds[1]) or \
-            not (allowed_means[0] < mean < allowed_means[1]) or \
-            not (slope < 30) or \
-            not (intercept < 50):
+        if not (0 < amp < 1_000):
+            return -np.inf
+        if not (mu0 - 2.0 < mu < mu0 + 2.0):
+            return -np.inf
+        if not (max(0.0, s0 - 0.5) < sig < s0 + 0.5):
+            return -np.inf
+        if m > 30 or b > 50:
             return -np.inf
         return ln_prior
 
-    def _log_likelihood_(self, theta): 
-        model_vals = self._compound_model_(theta, self.bin_centers) 
-        residual   = self.bin_heights - model_vals 
-        inv_var    = 1.0 / (self.bin_errors ** 2) 
-        return -0.5 * np.sum(residual**2 * inv_var + np.log(2.0 * np.pi / inv_var)) 
+    def _log_likelihood(self, theta):
+        model = self._compound_model(theta, self.bin_centers)
+        resid = self.bin_heights - model
+        ivar  = 1.0 / self.bin_errors**2
+        return -0.5 * np.sum(resid**2 * ivar + np.log(2 * np.pi / ivar))
 
-    def _log_probability_(self, theta): 
-        lp = self._log_prior_(theta) 
-        if not np.isfinite(lp): 
-            return -np.inf 
-        return lp + self._log_likelihood_(theta) 
+    def _log_probability(self, theta):
+        lp = self._log_prior(theta)
+        return -np.inf if not np.isfinite(lp) else lp + self._log_likelihood(theta)
 
-    def _initial_guess_(self): 
-        amp_guess   = np.max(self.bin_heights) / 4
-        mean_guess  = np.mean(self.data)
-        sigma_guess = np.std(self.data)
-        slope_guess = 0.0
-        inter_guess = (
-            np.min(self.bin_heights) if np.min(self.bin_heights) > 0 else 1.0
-        )
-        f_guess     = 0.10               # start with 10 % in RC peak
-        return [f_guess, amp_guess, mean_guess, sigma_guess, slope_guess, inter_guess]
+    def __init__(self, data, bins=50):
+        self.data = np.asarray(data)
+        self.bins = bins
 
-    def run(self, nwalkers=64, nsteps=1500, burnin=300, thin=10): 
-        """
-        Runs the emcee MCMC to fit the histogram distribution 
-        with a compound Gaussian+Linear1D model . 
+        self.bin_heights, self.bin_edges = np.histogram(self.data, bins=bins)
+        self.bin_centers = 0.5 * (self.bin_edges[:-1] + self.bin_edges[1:])
+        self.bin_errors  = np.sqrt(self.bin_heights + 1)
 
-        Args: 
-            * nwalkers (int): number of MCMC walkers. 
-            * nsteps   (int): total steps in chain.
-            * burnin   (int): steps to discard as burn-in. 
-            * thin     (int): thinning factor to reduce autocorrelation 
+        self.samples = None
+        self.best_fit_params = None
+        self.log_probs = None
 
-        Returns: 
-            * best_fit_params (dict): contains median optimized parameter values
-            * samples      (ndarray): 2D array (n_samples, 5) with posterior samples 
-                                      after burn-in and thinning. 
+    def _initial_guess(self):
+        u0        = np.log(0.1/0.9)  # logit
+        amp0      = self.bin_heights.max() / 4
+        mu0       = np.mean(self.data)
+        sig0      = np.std(self.data)
+        m0        = 0.0
+        b0        = self.bin_heights.min() if self.bin_heights.min() > 0 else 1.0
+        return [u0, amp0, mu0, sig0, m0, b0]
 
-        """ 
+    def run(self, nwalkers=64, nsteps=15_000, burnin=1_000, thin=1):
+        p0   = self._initial_guess()
+        ndim = len(p0)
+        pos  = p0 + 1e-4 * np.random.randn(nwalkers, ndim)
 
-        init_guess = self._initial_guess_() 
-        ndim = len(init_guess) 
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, self._log_probability)
+        sampler.run_mcmc(pos, nsteps, progress=False)
 
-        # walker starting positions
-        pos = init_guess + 1e-4 * np.random.randn(nwalkers, ndim) 
+        self.log_probs = sampler.get_log_prob(discard=0, flat=False)
+        self.samples   = sampler.get_chain(discard=burnin, thin=thin, flat=True)
 
-        # emcee sampler 
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, self._log_probability_)  
-        sampler.run_mcmc(pos, nsteps, progress=False) 
-        
-        # log  probability for all walkers at every step 
-        self.log_probs = sampler.get_log_prob(discard=0, flat=False) 
-        self.samples   = sampler.get_chain(discard=burnin, thin=thin, flat=True) 
+        # median parameters
+        u_m, amp_m, mu_m, sig_m, m_m, b_m = np.median(self.samples, axis=0)
+        f_m = _sigmoid(u_m)
 
-        f_m, amp_m, mean_m, sigma_m, slope_m, intercept_m = np.median(self.samples, axis=0)
         self.best_fit_params = {
-            "frac_RC": f_m, 
+            "frac_RC":   f_m,
             "amplitude": amp_m,
-            "mean": mean_m,
-            "stddev": sigma_m,
-            "slope": slope_m,
-            "intercept": intercept_m
+            "mean":      mu_m,
+            "stddev":    sig_m,
+            "slope":     m_m,
+            "intercept": b_m,
         }
-        return self.best_fit_params, self.samples, self.log_probs 
+        return self.best_fit_params, self.samples, self.log_probs
 
-    def corner_plot(self): 
-        if self.samples is None: 
-            raise RuntimeError("[ERROR] No samples found. Run the MCMC first.") 
-        
-        fig = corner.corner(
-            self.samples, 
-            labels=["f_RC", "amplitude", "mean", "stddev", "slope", "intercept"], 
-            show_titles=True, 
-            label_kwargs={"fontsize": 24} 
-        ) 
+    def corner_plot(self):
+        if self.samples is None:
+            raise RuntimeError("Run the MCMC first.")
+        return corner.corner(
+            self.samples,
+            labels=["u (logit f_RC)", "amp", "μ", "σ", "slope", "intercept"],
+            show_titles=True,
+        )
 
-        return fig 
+    def plot_fit(self):
+        if self.best_fit_params is None:
+            raise RuntimeError("Run the MCMC first.")
 
-    def plot_fit(self): 
-        if self.best_fit_params is None: 
-            raise RuntimeError("[ERROR] No best-fit parameters found. Run the MCMC first.")
-
-        _, _ = plt.subplots(1, 1, figsize=(8, 5)) 
-        plt.errorbar(self.bin_centers, self.bin_heights, 
-                     yerr=self.bin_errors, fmt=".k", capsize=2, label="Histogram Data")
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.errorbar(self.bin_centers, self.bin_heights,
+                    yerr=self.bin_errors, fmt=".k", capsize=2)
 
         bf = self.best_fit_params
+        u   = np.log(bf["frac_RC"] / (1.0 - bf["frac_RC"]))
+        theta = [u, bf["amplitude"], bf["mean"], bf["stddev"],
+                 bf["slope"], bf["intercept"]]
+
         x = np.linspace(self.bin_edges[0], self.bin_edges[-1], 500)
-        params = [bf["amplitude"], bf["mean"], bf["stddev"], bf["slope"], bf["intercept"]]
-        model_vals = self._compound_model_(params, x)
-
-        plt.plot(x, model_vals, "r-") 
-
-        plt.xlabel("Bin Center")
-        plt.ylabel("Frequency")
-        plt.title("Compound Fit") 
-        plt.legend() 
-        return plt 
-
-
-
-
-
-
-
-
-
-        
-
-        
-
-
-
-
-
+        ax.plot(x, self._compound_model(theta, x), "r-")
+        ax.set_xlabel("Bin centre")
+        ax.set_ylabel("Count")
+        ax.set_title("Compound Gaussian + Linear fit")
+        return fig, ax
 
