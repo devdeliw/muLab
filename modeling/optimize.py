@@ -245,39 +245,55 @@ class Estimator:
 
 
 if __name__ == '__main__':  
+    import pickle 
 
     filt_combinations = [ 
-        #["F115W", "F212N", "F115W", "NRCB1", "NRCB1", "NRCB1"],
-        #["F212N", "F323N", "F323N", "NRCB1", "NRCB5", "NRCB5"], 
-        #["F212N", "F405N", "F212N", "NRCB1", "NRCB5", "NRCB1"], 
-        #["F115W", "F212N", "F115W", "NRCB2", "NRCB2", "NRCB2"],
-        #["F212N", "F323N", "F323N", "NRCB2", "NRCB5", "NRCB5"], 
-        #["F212N", "F405N", "F212N", "NRCB2", "NRCB5", "NRCB2"], 
-        #["F115W", "F212N", "F115W", "NRCB3", "NRCB3", "NRCB3"],
-        #["F212N", "F323N", "F323N", "NRCB3", "NRCB5", "NRCB5"], 
-        #["F212N", "F405N", "F212N", "NRCB3", "NRCB5", "NRCB3"], 
-        #["F115W", "F212N", "F115W", "NRCB4", "NRCB4", "NRCB4"],
-        #["F212N", "F323N", "F323N", "NRCB4", "NRCB5", "NRCB5"], 
-        #["F212N", "F405N", "F212N", "NRCB4", "NRCB5", "NRCB4"], 
+        ["F115W", "F212N", "F115W", "NRCB1", "NRCB1", "NRCB1"],
+        ["F212N", "F405N", "F212N", "NRCB1", "NRCB5", "NRCB1"], 
+        ["F115W", "F212N", "F115W", "NRCB2", "NRCB2", "NRCB2"],
+        ["F212N", "F405N", "F212N", "NRCB2", "NRCB5", "NRCB2"], 
+        ["F115W", "F212N", "F115W", "NRCB3", "NRCB3", "NRCB3"],
+        ["F212N", "F405N", "F212N", "NRCB3", "NRCB5", "NRCB3"], 
+        ["F115W", "F212N", "F115W", "NRCB4", "NRCB4", "NRCB4"],
+        ["F212N", "F405N", "F212N", "NRCB4", "NRCB5", "NRCB4"], 
     ]
+
+    slopes = {
+        "NRCB1": { 
+            "F115W-F212N_F115W": None,
+            "F212N-F323N_F323N": None,
+            "F212N-F405N_F212N": None, 
+        },
+        "NRCB2": { 
+            "F115W-F212N_F115W": None,
+            "F212N-F323N_F323N": None,
+            "F212N-F405N_F212N": None,
+        },
+        "NRCB3": {
+            "F115W-F212N_F115W": None,
+            "F212N-F323N_F212N": None,
+            "F212N-F405N_F212N": None, 
+        },
+        "NRCB4": {
+            "F115W-F212N_F115W": None,
+            "F212N-F323N_F323N": None,
+            "F212N-F405N_F212N": None,
+        },
+    }
 
     for comb in filt_combinations: 
         filt1, filt2, filty, reg1, reg2, regy = comb 
         est = Estimator(
             filt1=filt1, filt2=filt2, filty=filty, 
             reg1=reg1, reg2=reg2, regy=regy, 
-            n_bins=10, verbose=True, autocorr=True,
+            n_bins=10, verbose=True, autocorr=False,
         )
         est.run(save=True) 
         est.plot(save=True, show=False)
 
-    """
-    est = Estimator(
-        filt1='F115W', filt2='F212N', filty='F115W',
-        reg1='NRCB1', reg2='NRCB1', regy='NRCB1',
-        n_bins=15, verbose=True, autocorr=True,
-    )
-    est.run(save=True)
-    est.plot(save=True, show=False)
-    """
+        slopes[reg1][f"{filt1}-{filt2}_{filty}"] = (est.slope, est.slope_err)
+        
+        with open("./outputs/MCMC/slopes.pkl", "wb") as f: 
+            pickle.dump(slopes, f)
+
 
