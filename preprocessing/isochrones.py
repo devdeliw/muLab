@@ -52,7 +52,7 @@ class Isochrones:
             red_law=red_law,            # reddening law is Fritz+11  
             atm_func=atm_func, 
             evo_model=evo_model, 
-            iso_dir=iso_dir,            # directory to place isochrone files
+            iso_dir=iso_dir,            
         ) 
 
         mass = isochrone.points['mass'] 
@@ -73,9 +73,18 @@ class Isochrones:
         return y2_y1 / x2_x1 
 
 if __name__ == "__main__": 
-    inst = Isochrones("F115W", "F212N", "F115W") 
-    slope = inst.calculate_slope()
-    print(f"{inst.filt1}-{inst.filt2} vs. {inst.filty}: {slope}")
+    filt_combinations = [
+        ["F115W", "F212N", "F115W"], 
+        ["F212N", "F323N", "F323N"], 
+        ["F212N", "F405N", "F212N"], 
+    ]
+
+    for [filt1, filt2, filty] in filt_combinations:
+        inst = Isochrones(filt1, filt2, filty) 
+        slope = inst.calculate_slope()
+        print(f"{inst.filt1}-{inst.filt2} vs. {inst.filty}: {slope}")
+
+
 
 
 

@@ -63,18 +63,30 @@ class GenerateRC():
 
         xy = np.vstack([x, y]) 
         z = gaussian_kde(xy)(xy)
-
-        ax.scatter(x, y, c=z, s=40, marker="+")
-        ax.set_xlabel(f"{self.filt1} - {self.filt2} (mag)", fontsize=14)
-        ax.set_ylabel(f"{self.filty} (mag)", fontsize=14) 
-        ax.set_title(f"{self.reg1}", fontsize=16)
+    
+        ax.scatter(x, y, c=z, s=40, marker="+", alpha=0.6)
+        ax.set_xlabel(f"{self.filt1} - {self.filt2} (mag)", fontsize=16)
+        ax.set_ylabel(f"{self.filty} (mag)", fontsize=16) 
+        ax.set_title(f"{self.reg1} {self.filt1} - {self.filt2} vs. {self.filty}", fontsize=18)
         ax.invert_yaxis()
 
         if hasattr(self, "cutoff_point1"): 
-            ax.axline(xy1=self.cutoff_point1, slope=self.cutoff_slope, c='r')
-            ax.axline(xy1=self.cutoff_point2, slope=self.cutoff_slope, c='r')
+            ax.axline(xy1=self.cutoff_point1, slope=self.cutoff_slope, linestyle='--', c='r', label="initial cutoff")
+            ax.axline(xy1=self.cutoff_point2, slope=self.cutoff_slope, linestyle='--', c='r')
+
+            height = abs(self.cutoff_point1[1] - self.cutoff_point2[1]) 
+
+            upper_cutoff = max(self.cutoff_point1[1], self.cutoff_point2[1]) 
+            lower_cutoff = min(self.cutoff_point1[1], self.cutoff_point2[1])
+            upper_cutoff += height 
+            lower_cutoff -= height
+
+            ax.axline(xy1=(self.cutoff_point2[0], upper_cutoff), slope=self.cutoff_slope, linestyle='--', c='cadetblue', label="expanded cutoff")
+            ax.axline(xy1=(self.cutoff_point1[0], lower_cutoff), slope=self.cutoff_slope, linestyle='--', c='cadetblue')
+            ax.legend(fontsize=14)
 
         if save: 
+            plt.tight_layout()
             out_dir = f"{self.out_dir}CMD/"
             os.makedirs(out_dir, exist_ok=True)
 
@@ -83,7 +95,7 @@ class GenerateRC():
             logging.info(f" CMD saved to {out_dir}{fname}.")
             
     @cached_property
-    def rc_mask(self, expand_factor=1.0): 
+    def rc_mask(self, expand_factor=1): 
         with open(CUTOFFS, "rb") as f: 
             cutoffs = pickle.load(f) 
 
@@ -248,14 +260,19 @@ class GenerateRC():
         plt.close()
         return
 
-    def plot_hess(self, filt1, filt2, filty, region): 
+    def plot_hess(self, filt1, filt2, filty, region, gamma=None): 
         m1, m2, my, m1e, m2e, mye = self.filtered_mags(filt1, filt2, filty, region)
+        if not gamma: 
+            gamma = 1.25
         plot_unsharp_hess(m1, m2, my, m1e, m2e, mye, filt1, filt2, filty, 
-                          region=region, plot_fritz=True)
+                          region=region, plot_fritz=False, gamma=gamma)
 
 
 
 if __name__ == "__main__": 
+
+    inst = GenerateRC("F115W", "F212N", "F115W", "NRCB1", "NRCB1", "NRCB1")
+    inst.plot_hess("F115W", "F212N", "F115W", "NRCB1", gamma=1.5)    
 
     """
     filt_combinations = [ 
@@ -278,13 +295,25 @@ if __name__ == "__main__":
 
         inst = GenerateRC(filt1, filt2, filty, reg1, reg2, regy) 
         inst.plot_hess(filt1, filt2, filty, reg1)
+    """
+    
+    """
+    filt_combinations = [
+        ["F115W", "F212N", "F115W", "NRCB1", "NRCB1", "NRCB1"],
+        ["F115W", "F212N", "F115W", "NRCB2", "NRCB2", "NRCB2"], 
+        ["F115W", "F212N", "F115W", "NRCB3", "NRCB3", "NRCB3"], 
+        ["F115W", "F212N", "F115W", "NRCB4", "NRCB4", "NRCB4"], 
+    ]
+
+    for filt_comb in filt_combinations: 
+
+        filt1, filt2, filty, reg1, reg2, regy = filt_comb 
+        inst = GenerateRC(filt1, filt2, filty, reg1, reg2, regy) 
+        inst.red_clump_stars(write=True)
+
     """ 
 
-    filt_comb = ["F115W", "F212N", "F115W", "NRCB1", "NRCB1", "NRCB1"] 
-    filt1, filt2, filty, reg1, reg2, regy = filt_comb 
 
-    inst = GenerateRC(filt1, filt2, filty, reg1, reg2, regy) 
-    inst.red_clump_stars(write=True)
 
 
 

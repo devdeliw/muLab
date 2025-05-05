@@ -16,17 +16,17 @@ def plot_unsharp_hess(
     mag1err, mag2err, magyerr,       # errors
     filt1, filt2, filty, 
     region       = "NRCB1",  
-    magerr_max   = 1.0,              # σ cut
+    magerr_max   = 1.0,              # sigma cut
     binsize_mag  = 0.02,             # y-axis bin width  (mag)
     binsize_clr  = 0.02,             # x-axis bin width  (mag)
-    gauss_sigma  = 0.1,              # σ of blur kernel (mag)
+    gauss_sigma  = 0.3,              # sigma of blur kernel (mag)
     gamma        = 3.0,              # PowerNorm scaling
-    amount       = 0.0,               # sharpening strength; 0→off
+    amount       = 0.0,               # sharpening strength; 0 is off
     extent       = None,             # (xmin,xmax,ymax,ymin)
     figsize      = (10,8),
-    cmap         = 'magma',
-    savepath     = "./outputs/unsharp_mask/plot/",             # path or None
-    picklepath   = "./outputs/unsharp_mask/data/",             # path or None
+    cmap         = 'viridis',
+    savepath     = "./outputs/unsharp_mask/plot/",             
+    picklepath   = "./outputs/unsharp_mask/data/",      
     verbose      = True, 
     plot_fritz   = True, 
 ):
@@ -80,12 +80,12 @@ def plot_unsharp_hess(
     for m, dm, c, dc in zip(mag, mag_e, colour, colour_e):
         pdf_y = np.diff(norm(m,dm).cdf(mag_bins))
         pdf_x = np.diff(norm(c,dc).cdf(clr_bins))
-        hess += np.outer(pdf_y, pdf_x)              # auto-broadcast
+        hess += np.outer(pdf_y, pdf_x)              
 
     # unsharp mask
-    kernel = Gaussian2DKernel(gauss_sigma / binsize_mag)   # σ in pixels (y)
+    kernel = Gaussian2DKernel(gauss_sigma / binsize_mag)   # sigma in pixels (y)
     blurred = convolve(hess, kernel)
-    sharpen = (1 + amount) * hess - amount * blurred       # std. formula
+    sharpen = (1 + amount) * hess - amount * blurred       # std
 
     floor = sharpen[sharpen>0].min() * 1e-2
     data_for_plot = np.clip(sharpen, floor, None)
@@ -104,10 +104,10 @@ def plot_unsharp_hess(
         norm=pwr_norm,
         aspect='auto'
     )
-    ax.set_xlabel(f'{filt1} - {filt2}  (mag)', fontsize=14)
-    ax.set_ylabel(f'{filty}  (mag)', fontsize=14)
+    ax.set_xlabel(f'{filt1} - {filt2}  (mag)', fontsize=16)
+    ax.set_ylabel(f'{filty}  (mag)', fontsize=16)
     plt.colorbar(im, ax=ax, label='stars / bin')
-    ax.set_title(f'Hess Diagram {region} {filt1} - {filt2} vs. {filty}', fontsize=16)
+    ax.set_title(f'Hess Diagram {region} {filt1} - {filt2} vs. {filty}', fontsize=18)
     plt.tight_layout()
 
     def densest_point(x: np.ndarray, y: np.ndarray, k: int = 10) -> tuple[float, float]:
