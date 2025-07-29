@@ -10,11 +10,6 @@ from modeling.generating_tiles import GenerateTiles, TileConfig
 plt.rcParams["font.family"]      = "serif" 
 plt.rcParams['mathtext.fontset'] = 'cm'
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s:%(name)s: %(message)s"
-)
-
 @dataclass
 class RunMCMCConfig:
     n_tiles:        int     = 10
@@ -99,6 +94,12 @@ class RunMCMC(GenerateTiles):
         self.autocorr       = config.autocorr 
         self.autocorr_bin   = config.autocorr_bin
         self.best_parameters = [] 
+
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(levelname)s::%(name)s:: %(message)s",
+            force=True
+        )
 
         self.logger = logging.getLogger(__name__) 
 
