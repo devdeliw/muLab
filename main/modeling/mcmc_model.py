@@ -8,7 +8,7 @@ plt.rcParams["font.family"]      = "serif"
 plt.rcParams['mathtext.fontset'] = 'cm'
 
 def _sigmoid(x): 
-    # Numerically stable logistic function 
+    # stable logistic function 
     return np.where(
         x >= 0, 
         1.0 / (1.0 + np.exp(-x)), 
@@ -67,6 +67,7 @@ class MCMC:
         f_rc = _sigmoid(u)
         f_rc = np.clip(f_rc, 1e-6, 1 - 1e-6)
 
+        # compound gaussian + linear
         gaussian = amp * np.exp(-0.5 * ((x-mu) / sig) ** 2) 
         linear   = m * x + b 
         return gaussian + (1.0 - f_rc) * linear
@@ -74,7 +75,6 @@ class MCMC:
     def integrated_autocorr(self, c=5, tol=50, quiet=True): 
         if self.chain is None: 
             raise RuntimeError("Run MCMC first.") 
-
         try:
             import warnings 
             with warnings.catch_warnings():
@@ -87,9 +87,8 @@ class MCMC:
         return self.tau
 
     def _autocorr_vs_N(self, n=200, c=5, tol=50, quiet=True): 
-        # Track tau as chain length N grows. 
-        # Stores curve for plotting. 
-
+        # track tau as chain length N grows. 
+        # stores curve for plotting. 
         if self.chain is None: 
             raise RuntimeError("Run the MCMC first.") 
 
@@ -110,7 +109,7 @@ class MCMC:
         return self._acorr_curve 
 
     def plot_autocorr(self, color='k', figure=None, axis=None): 
-        # Plots tau against sample size 
+        # plots tau against sample size 
         if self._acorr_curve is None: 
             raise RuntimeError("Call self._autocorr_vs_N first.") 
 
@@ -164,8 +163,10 @@ class MCMC:
 
         p0 = self._initial_guess() 
         ndim = len(p0) 
+        # initialize walker positions 
         pos = p0 + 1e-4 * np.random.randn(nwalkers, ndim) 
 
+        # run the mcmc 
         sampler = emcee.EnsembleSampler(nwalkers, ndim, self._log_probability) 
         sampler.run_mcmc(pos, nsteps, progress=progress)
 
@@ -185,10 +186,10 @@ class MCMC:
             "slope"     : m_m, 
             "intercept" : b_m, 
         }
-
         return self.best_fit_parameters, self.samples, self.log_probs 
 
     def plot_corner(self): 
+        # corner plot 
         if self.samples is None: 
             raise RuntimeError("Run the MCMC first.") 
         return corner.corner(
@@ -199,7 +200,7 @@ class MCMC:
             label_kwargs={"fontsize": 18},
         )
 
-    def plot_best_fit(self): 
+    def plot_best_fit(self):
         if self.best_fit_parameters is None: 
             raise RuntimeError("Run the MCMC first.") 
 
