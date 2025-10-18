@@ -1,4 +1,4 @@
-name: astroconda
+name: mulab
 channels:
   - http://ssb.stsci.edu/astroconda
   - conda-forge
