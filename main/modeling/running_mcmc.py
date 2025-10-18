@@ -12,7 +12,7 @@ plt.rcParams['mathtext.fontset'] = 'cm'
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(levelname)s:%(name)s:%(message)s"
+    format="%(levelname)s:%(name)s: %(message)s"
 )
 
 @dataclass
@@ -173,8 +173,8 @@ class RunMCMC(GenerateTiles):
     def run(self): 
         # Iterate through all tiles and run mcmc. 
 
-        self.logger.info(f" Running MCMC with {self.config.n_tiles} tiles.")
-        self.logger.info(f" {self.region1}: {self.filter1} - {self.filter2} vs. {self.filtery}") 
+        self.logger.info(f"Running MCMC with {self.config.n_tiles} tiles.")
+        self.logger.info(f"{self.region1}: {self.filter1} - {self.filter2} vs. {self.filtery}") 
 
         colors = plt.cm.cool(np.linspace(0.2, 0.8, len(self.star_tiles))) # type: ignore 
 
@@ -210,7 +210,7 @@ class RunMCMC(GenerateTiles):
             out_dir.mkdir(exist_ok=True, parents=True)
             filename = out_dir / f"{self.config.n_tiles}_tiles_{self.region1}_{self.filter1}-{self.filter2}_{self.filtery}.png" 
             self.fig_autocorr.savefig(filename, dpi=300)
-            self.logger.info(f" Autocorrelation Figure saved to {Path(*filename.parts[-4:])}.")
+            self.logger.info(f"Autocorrelation Figure saved to {Path(*filename.parts[-4:])}.")
 
         self.logger.info(f" [FINAL] slope={self.slope:.4f} +/- {self.slope_err:.4f}") 
         return self.slope, self.intercept 
@@ -234,7 +234,7 @@ class RunMCMC(GenerateTiles):
         pts = np.vstack(self.points) # (tile_center, mean_y) 
         axis.errorbar(
             pts[:, 0], pts[:, 1], yerr=self.errors, color='k', 
-            fmt='h', markersize=4, capsize=4, zorder=3 
+            fmt='h', markersize=6, capsize=4, zorder=3 
         )
 
         # best-fit line 
@@ -247,7 +247,7 @@ class RunMCMC(GenerateTiles):
 
         axis.text(
             0.02, 0.02,
-            f"slope = {self.slope:.3f} ± {self.slope_err:.3f}",
+            f"slope = {self.slope:.3f} +/- {self.slope_err:.3f}",
             transform=axis.transAxes,
             fontsize=12,
             verticalalignment='bottom',
@@ -264,7 +264,9 @@ class RunMCMC(GenerateTiles):
             out_dir.mkdir(exist_ok=True, parents=True)
             filename = out_dir / f"{self.config.n_tiles}_tiles_{self.region1}_{self.filter1}-{self.filter2}_{self.filtery}.png"
             figure.savefig(filename, dpi=300) 
-            self.logger.info(f" Slope Figure saved to {Path(*filename.parts[-4:])}")
+            self.logger.info(f"Slope Figure saved to {Path(*filename.parts[-4:])}")
+        else: 
+            plt.show() 
 
 
 

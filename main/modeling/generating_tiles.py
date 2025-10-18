@@ -70,7 +70,7 @@ class GenerateTiles(GenerateRedClump):
             with open(pkl, "rb") as f: 
                     red_clump_data = pickle.load(f) 
         except: 
-            self.logger.warning(" RC pickle extraction failed. Recalculating Manually")
+            self.logger.warning("RC pickle extraction failed. Recalculating Manually")
             red_clump_data = self.extract_red_clump_stars(export=True)
 
         m1 = red_clump_data[f"m{self.filter1}"] 
@@ -135,7 +135,7 @@ class GenerateTiles(GenerateRedClump):
 
             with open(filename, "wb") as f: 
                 pickle.dump(star_tiles, f) 
-            self.logger.info(f" Placed tiled-starlist into {Path(*filename.parts[-3:])}.")
+            self.logger.info(f"Placed tiled-starlist into {Path(*filename.parts[-3:])}.")
 
         return star_tiles 
 
@@ -167,7 +167,7 @@ class GenerateTiles(GenerateRedClump):
         self.config.plt_dir.mkdir(exist_ok=True, parents=True)
         filename = self.config.plt_dir / f"{self.config.n_tiles}_tiles_{self.region1}_{self.filter1}-{self.filter2}_{self.filtery}.png"
         figure.savefig(filename, dpi=300) 
-        self.logger.info(f" {self.config.n_tiles} tile Figure saved to {Path(*filename.parts[-3:])}.")
+        self.logger.info(f"{self.config.n_tiles} tile Figure saved to {Path(*filename.parts[-3:])}.")
 
 
 if __name__ == "__main__": 
