@@ -14,11 +14,6 @@ from modeling.mcmc_jitter import LinearMCMC
 plt.rcParams["font.family"]      = "serif" 
 plt.rcParams['mathtext.fontset'] = 'cm'
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s:%(name)s: %(message)s"
-)
-
 @dataclass 
 class RunLinearMCMCConfig: 
     ansatz_slope: tuple[tuple[float, float], tuple[float, float], float]
@@ -53,6 +48,13 @@ class RunLinearMCMC:
         self.out_dir  = config.output_dir 
         self.run_linear_config = config
         self.out_dir.mkdir(parents=True, exist_ok=True) 
+
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(levelname)s::%(name)s:: %(message)s", 
+            force=True
+        )
+
         self.logger = logging.getLogger(__name__)
 
     @cached_property 
