@@ -1,9 +1,10 @@
 import pickle 
-import logging 
+import logging
 import numpy as np 
 import matplotlib.pyplot as plt 
 
 from pathlib import Path 
+from typing import Optional 
 from  dataclasses import dataclass
 from functools import cached_property
 from preprocessing.generating_isochrone import IsochroneSlopes 
@@ -12,11 +13,35 @@ from preprocessing.generating_red_clump import RC_CUTOFF, GenerateRedClump
 plt.rcParams["font.family"]      = "serif" 
 plt.rcParams['mathtext.fontset'] = 'cm'
 
+@dataclass 
+class RCConfig: 
+    """
+    This dataclass determines whether the algorithm will extract RC stars from each 
+    NRCB footprint individually, or just be given arbitrary photometric data to perform 
+    the RC slope analysis on. 
+
+    If NRCB footprints should be analyzed set m1=m2=my=None, and region1=region2=regiony 
+    to the region of choice.
+
+    Otherwise set region1=region2=regiony=None and set m1, m2, my to be the photometric 
+    magnitudes to calculate the RC slope from in a m1-m2 vs. my CMD. 
+
+    If both regions and magnitudes are specified, magnitudes take precedence. 
+    """
+
+    m1      : Optional[np.ndarray] = None  
+    m2      : Optional[np.ndarray] = None 
+    my      : Optional[np.ndarray] = None 
+    # *
+    region1 : Optional[str] = None 
+    region2 : Optional[str] = None 
+    regiony : Optional[str] = None 
+
 @dataclass
 class TileConfig: 
     """
     Args: 
-        * n_tiles      (int)   : number of tiles to place across horizontal RC 
+        * n_tiles      (int)   : number of tiles to place across horizontal RC
         * out_dir      (Path)  : directory to place output star-tile dictionary
         * pickle_dir   (Path)  : directory of NRCB red clump data
         * cutoffs_file (Path)  : directory where cutoffs are stored 
@@ -44,20 +69,49 @@ class GenerateTiles(GenerateRedClump):
         filter1: str, 
         filter2: str, 
         filtery: str, 
-        region1: str, 
-        region2: str, 
-        regiony: str, 
-        config: TileConfig = TileConfig()
+        rc_cfg : RCConfig, 
+        config : TileConfig = TileConfig()
     ): 
         self.filter1 = filter1 
         self.filter2 = filter2 
         self.filtery = filtery 
-        self.region1 = region1 
-        self.region2 = region2 
-        self.regiony = regiony
-        
+
+        self.m1      = np.asarray(rc_cfg.m1, dtype=float)
+        self.m2      = np.asarray(rc_cfg.m2, dtype=float) 
+        self.my      = np.asarray(rc_cfg.my, dtype=float)
+        self.region1 = rc_cfg.region1 
+        self.region2 = rc_cfg.region2 
+        self.regiony = rc_cfg.regiony
+
+        # verifying config completeness
+        regions_given    = all(r is not None for r in (self.region1, self.region2, self.regiony))
+        magnitudes_given = all(m is not None for m in (self.m1, self.m2, self.my))
+
+        if magnitudes_given:
+            self.region1 = self.region2 = self.regiony = None
+        elif regions_given:
+            pass
+        else:
+            raise ValueError(
+                "Either all regions must be specified or all magnitudes must be specified."
+            )
+         
         self.config    = config 
-        self.logger    = logging.getLogger(__name__)
+        self.logger    = logging.getLogger(__name__) 
+
+    @cached_property
+    def give_rc_data(self): 
+        """ 
+        Manually provided red clump data -- no regions.  
+        """
+
+        return { 
+            "m1": self.m1, 
+            "m2": self.m2, 
+            "my": self.my, 
+            "x" : np.subtract(self.m1, self.m2), 
+            "y" : self.my
+        }
 
     @cached_property
     def load_rc_data(self): 
@@ -65,7 +119,7 @@ class GenerateTiles(GenerateRedClump):
         Load and cache the raw red clump data for given filters & region.
         """
 
-        try: 
+        try:
             pkl = self.config.pickle_dir / f"{self.region1}.pickle" 
             with open(pkl, "rb") as f: 
                     red_clump_data = pickle.load(f) 
@@ -93,6 +147,7 @@ class GenerateTiles(GenerateRedClump):
         """
         Compute and cache the slope of the RC ridge. 
         """ 
+        return 0
         return IsochroneSlopes(self.filter1, self.filter2, self.filtery).reddening_slope()
 
     @cached_property
@@ -105,12 +160,16 @@ class GenerateTiles(GenerateRedClump):
         ])
 
     def rotate_RC(self): 
-        red_clump_data = self.load_rc_data
+        if self.m1 is not None and self.m2 is not None and self.my is not None: 
+            red_clump_data = self.give_rc_data 
+        else: 
+            red_clump_data = self.load_rc_data
+
         x = red_clump_data['x'] 
         y = red_clump_data['y'] 
 
         xy = np.vstack((x, y)).T 
-        return xy @ self.rotation_matrix.T 
+        return xy #@ self.rotation_matrix.T 
 
     def tiles(self, export=True): 
         n_tiles = self.config.n_tiles 
@@ -124,8 +183,8 @@ class GenerateTiles(GenerateRedClump):
         idxs = np.clip(idxs, 0, n_tiles - 1)
 
         star_tiles = np.empty(n_tiles, dtype=object) 
-        for i in range(n_tiles): 
-            star_tiles[i] = rotated_rc[idxs==i] @ self.rotation_matrix
+        for i in range(n_tiles):
+            star_tiles[i] = rotated_rc[idxs == i]
 
         if export: 
             out_dir = self.config.out_dir 
@@ -154,8 +213,9 @@ class GenerateTiles(GenerateRedClump):
                 label=f"{idx:<2}; {len(x)} stars"
             )
 
-        axis.set_xlabel(f"{self.region1} {self.filter1} - {self.filter2} (mag)", fontsize=15) 
-        axis.set_ylabel(f"{self.region1} {self.filtery} (mag)", fontsize=15) 
+        label_prefix = self.region1 if self.region1 is not None else ""
+        axis.set_xlabel(f"{label_prefix} {self.filter1} - {self.filter2} (mag)", fontsize=15) 
+        axis.set_ylabel(f"{label_prefix} {self.filtery} (mag)", fontsize=15) 
         axis.invert_yaxis()
 
         # to show orthogonality without any geometric skew 
@@ -165,7 +225,8 @@ class GenerateTiles(GenerateRedClump):
         plt.tight_layout()
 
         self.config.plt_dir.mkdir(exist_ok=True, parents=True)
-        filename = self.config.plt_dir / f"{self.config.n_tiles}_tiles_{self.region1}_{self.filter1}-{self.filter2}_{self.filtery}.png"
+        loc_prefix = self.region1 if self.region1 else "custom"
+        filename = self.config.plt_dir / f"{self.config.n_tiles}_tiles_{loc_prefix}_{self.filter1}-{self.filter2}_{self.filtery}.png"
         figure.savefig(filename, dpi=300) 
         self.logger.info(f"{self.config.n_tiles} tile Figure saved to {Path(*filename.parts[-3:])}.")
 
@@ -173,15 +234,19 @@ class GenerateTiles(GenerateRedClump):
 if __name__ == "__main__": 
     filter1, region1 = "F115W", "NRCB1" 
     filter2, region2 = "F212N", "NRCB1" 
-    filtery, regiony = filter1, region1 
+    filtery, regiony = filter1, region1
+
+    rc_cfg = RCConfig(
+        region1 = region1, 
+        region2 = region2, 
+        regiony = regiony 
+    )
 
     instance = GenerateTiles(
         filter1=filter1, 
         filter2=filter2, 
         filtery=filtery, 
-        region1=region1, 
-        region2=region2, 
-        regiony=regiony, 
+        rc_cfg = rc_cfg,
         config=TileConfig() 
     )
 

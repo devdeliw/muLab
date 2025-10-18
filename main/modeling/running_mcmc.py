@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path 
 from dataclasses import dataclass
 from modeling.mcmc_model import MCMC, MCMCConfig
-from modeling.generating_tiles import GenerateTiles, TileConfig
+from modeling.generating_tiles import GenerateTiles, TileConfig, RCConfig
 
 plt.rcParams["font.family"]      = "serif" 
 plt.rcParams['mathtext.fontset'] = 'cm'
@@ -36,10 +36,8 @@ class RunMCMC(GenerateTiles):
         filter1: str, 
         filter2: str, 
         filtery: str, 
-        region1: str, 
-        region2: str, 
-        regiony: str, 
-        load_pkl: bool        = True, 
+        load_pkl: bool        = False, 
+        rc_cfg: RCConfig      = RCConfig(), 
         config: RunMCMCConfig = RunMCMCConfig()
     ):
         """ 
@@ -51,17 +49,20 @@ class RunMCMC(GenerateTiles):
             * config   (RunMCMCConfig): configuration dataclass 
         """
 
-        self.filter1 = filter1 
-        self.filter2 = filter2 
-        self.filtery = filtery 
-        self.region1 = region1 
-        self.region2 = region2 
-        self.regiony = regiony
+        self.filter1  = filter1 
+        self.filter2  = filter2 
+        self.filtery  = filtery 
+        self.rcconfig = rc_cfg
         self.mcmc_config  = config
 
         n_tiles     = config.n_tiles 
         slope_minus = config.slope_minus
-        self.tileconfig = TileConfig(n_tiles=n_tiles, slope_minus=slope_minus)
+
+        self.tileconfig = TileConfig(
+            n_tiles=n_tiles, 
+            slope_minus=slope_minus
+        )
+
         self.mcmcconfig = MCMCConfig(
             nwalkers=config.nwalkers, 
             nsteps=config.nsteps, 
@@ -73,10 +74,8 @@ class RunMCMC(GenerateTiles):
             filter1, 
             filter2, 
             filtery, 
-            region1, 
-            region2, 
-            regiony, 
-            self.tileconfig
+            self.rcconfig,
+            self.tileconfig 
         )
         self.star_tiles  = self._load_star_tiles(load_pkl=load_pkl)
 
@@ -108,7 +107,7 @@ class RunMCMC(GenerateTiles):
         if load_pkl: 
             import pickle 
             try: 
-                out_dir = self.tileconfig.out_dir 
+                out_dir  = self.tileconfig.out_dir 
                 filename = out_dir / f"{self.filter1}-{self.filter2}_{self.filtery}.pickle" 
 
                 with open(filename, "rb") as f: 
@@ -120,7 +119,7 @@ class RunMCMC(GenerateTiles):
 
     def _rotate_stars(self, stars: np.ndarray): 
         rotated_stars = stars @ self._inv_rot 
-        x_rot, y_rot = rotated_stars.T 
+        x_rot, y_rot  = rotated_stars.T 
 
         return x_rot, y_rot 
 
@@ -134,11 +133,12 @@ class RunMCMC(GenerateTiles):
         )
         best_fit, samples, _ = self.mcmc.run() 
 
-        mean_y = best_fit['mean']
-        amp    = best_fit['amplitude']
-        sigma  = best_fit['stddev']
-        f_rc   = best_fit.get('frac_RC', 1.0)
+        mean_y  = best_fit['mean']
+        amp     = best_fit['amplitude']
+        sigma   = best_fit['stddev']
+        f_rc    = best_fit.get('frac_RC', 1.0)
         sigma_y = np.std(samples[:, 2], ddof=1)
+
         self.best_parameters.append(best_fit) 
 
         return x_rot, y_rot, mean_y, amp, sigma, f_rc, sigma_y 
@@ -175,7 +175,8 @@ class RunMCMC(GenerateTiles):
         # Iterate through all tiles and run mcmc. 
 
         self.logger.info(f"Running MCMC with {self.config.n_tiles} tiles.")
-        self.logger.info(f"{self.region1}: {self.filter1} - {self.filter2} vs. {self.filtery}") 
+        label = self.region1 if self.region1 else ""
+        self.logger.info(f"{label}: {self.filter1} - {self.filter2} vs. {self.filtery}") 
 
         colors = plt.cm.cool(np.linspace(0.2, 0.8, len(self.star_tiles))) # type: ignore 
 
@@ -210,9 +211,11 @@ class RunMCMC(GenerateTiles):
             out_dir = self.mcmc_config.output_dir / "autocorr" 
             out_dir.mkdir(exist_ok=True, parents=True)
             filename = out_dir / f"{self.config.n_tiles}_tiles_{self.region1}_{self.filter1}-{self.filter2}_{self.filtery}.png" 
+
             self.fig_autocorr.savefig(filename, dpi=300)
             self.logger.info(f"Autocorrelation Figure saved to {Path(*filename.parts[-4:])}.")
 
+        self.logger.info(f" [FINAL] # points used: {len(xs)}")
         self.logger.info(f" [FINAL] slope={self.slope:.4f} +/- {self.slope_err:.4f}") 
         return self.slope, self.intercept 
 
@@ -276,18 +279,26 @@ if __name__ == "__main__":
     filter2, region2 = "F212N", "NRCB1" 
     filtery, regiony = filter1, region1 
 
+    rc_cfg = RCConfig(
+        region1=region1, 
+        region2=region2, 
+        regiony=regiony,
+        m1=None, 
+        m2=None, 
+        my=None, 
+    )
+
     instance = RunMCMC(
         filter1=filter1, 
         filter2=filter2, 
         filtery=filtery, 
-        region1=region1, 
-        region2=region2, 
-        regiony=regiony, 
-        config=RunMCMCConfig(autocorr=True)
+        rc_cfg=rc_cfg, 
+        config=RunMCMCConfig(autocorr=True),
+        load_pkl=False
+        
     )
 
     slope, intercept = instance.run()
-    #instance.plot_fit(export=True)
     
 
 
